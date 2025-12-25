@@ -42,10 +42,10 @@ Creating a `br` type item doesn't produce a visible horizontal rule.
 
 ## Installation
 
-1. Copy `plugin.js` content
-2. In Thymer, go to a collection's settings
-3. Click "Edit Code"
-4. Paste the plugin code
+1. In the command pallete choose plugins and create a new plugin
+2. add the plugin.js and plugin.json
+3. click preview
+4. click save
 
 ## Usage
 
