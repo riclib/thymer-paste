@@ -1,0 +1,6 @@
+{
+	"ver": 1,
+	"name": "Skill Bridge",
+	"icon": "wand",
+	"description": "Bridge for piping markdown into Thymer from CLI tools"
+}
