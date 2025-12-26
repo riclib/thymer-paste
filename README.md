@@ -5,40 +5,33 @@ A Thymer plugin that converts markdown content into native Thymer blocks.
 ## Features
 
 ### Working
-- **Headings** - H1-H6 (content works, but all display as H1 - see Known Issues)
+- **Headings** - H1-H6 (all display as H1 until mp API is available)
 - **Bold/Italic/Inline Code** - Full inline formatting support
 - **Bullet lists** - Unordered lists with formatting
 - **Ordered lists** - Numbered lists with formatting
 - **Blockquotes** - Quote blocks
-- **Tasks** - Checkbox items (unchecked only - see Known Issues)
-- **Code blocks** - Fenced code blocks with content (no syntax highlighting - see Known Issues)
+- **Tasks** - Checkbox items (checked state pending mp API)
+- **Code blocks** - Fenced code blocks with content (syntax highlighting pending mp API)
 - **Paragraphs** - Regular text
 
-## Known Issues / Help Wanted
+## Pending Thymer API Features
 
-### `mp` (metadata/props) doesn't persist
+### `mp` (metadata/props) API - Coming Soon
 
-The internal `_item.mp` property controls important features:
+The Thymer team has confirmed the metaproperties API isn't exposed yet, but they're working on it.
+
+The internal `_item.mp` property controls:
 - **Heading levels**: `mp: { hsize: 1 }` for H1, `mp: { hsize: 2 }` for H2, etc.
 - **Code block language**: `mp: { language: "javascript" }` for syntax highlighting
-- **Task completion**: Unknown property for checked state
+- **Task completion state**
 
-**What we've tried:**
-1. Setting `newItem._item.mp = { hsize: 2 }` directly - doesn't persist
-2. Setting `mp` before calling `setSegments()` - doesn't persist
-3. Setting `mp` after calling `setSegments()` - doesn't persist
-4. Calling `setSegments([])` to trigger a sync after setting `mp` - doesn't persist
+Once the API is available, this plugin will support:
+- Proper H1/H2/H3 heading sizes
+- Syntax highlighting for code blocks
+- Checked/unchecked task states
 
-**What we know:**
-- `setSegments()` successfully persists the `ts` (text segments) array
-- Manually created items in Thymer DO have `mp` values (verified via dump)
-- There's no `setProps()` or `setMp()` method in the Plugin SDK
-- The Plugin SDK exposes `_item` which is the internal data object
-
-**If you know how to persist `mp` values, please open an issue or PR!**
-
-### Horizontal rules (`---`) don't render
-Creating a `br` type item doesn't produce a visible horizontal rule.
+### Horizontal rules
+Thymer doesn't have horizontal rules yet - it's been added to their roadmap.
 
 ## Installation
 
