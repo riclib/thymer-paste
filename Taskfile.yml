@@ -1,0 +1,77 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  copy:
+    desc: Copy plugin.js to clipboard (for pasting into Thymer)
+    cmds:
+      - cat plugin.js | wl-copy
+      - echo "plugin.js copied to clipboard"
+
+  copy-json:
+    desc: Copy plugin.json to clipboard
+    cmds:
+      - cat plugin.json | wl-copy
+      - echo "plugin.json copied to clipboard"
+
+  copy-all:
+    desc: Copy both plugin.js and plugin.json (js first, then json)
+    cmds:
+      - cat plugin.js | wl-copy
+      - echo "plugin.js copied - paste it, then press Enter to copy plugin.json"
+      - read
+      - cat plugin.json | wl-copy
+      - echo "plugin.json copied to clipboard"
+
+  test:
+    desc: Create test markdown file and copy to clipboard
+    cmds:
+      - |
+        cat <<'EOF' | wl-copy
+        # Heading 1
+
+        ## Heading 2 with **bold**
+
+        Regular paragraph with **bold**, *italic*, and `code`.
+
+        - Bullet one
+        - Bullet with **formatting**
+
+        1. First item
+        2. Second item
+
+        > Blockquote text
+
+        - [ ] Unchecked task
+        - [x] Checked task
+
+        ```javascript
+        function hello() {
+            return "world";
+        }
+        ```
+
+        Final paragraph.
+        EOF
+      - echo "Test markdown copied to clipboard"
+
+  commit:
+    desc: Git add, commit with message, and push
+    cmds:
+      - git add .
+      - git commit -m "{{.CLI_ARGS}}"
+      - git push
+
+  status:
+    desc: Show git status
+    cmds:
+      - git status
+
+  log:
+    desc: Show recent git log
+    cmds:
+      - git log --oneline -10
