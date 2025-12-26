@@ -1,6 +1,8 @@
 {
 	"ver": 1,
-	"name": "Skill Bridge",
+	"name": "Thymer Paste",
 	"icon": "wand",
-	"description": "Bridge for piping markdown into Thymer from CLI tools"
+	"description": "Paste markdown from clipboard, CLI, or iOS Shortcuts",
+	"queueUrl": "",
+	"queueToken": ""
 }

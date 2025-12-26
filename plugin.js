@@ -1,12 +1,16 @@
 /**
- * Claude Skill Bridge Plugin
+ * Thymer Paste Plugin
  *
- * Polls a local endpoint for markdown content and inserts it into the current record.
- * Use with: cat README.md | tm (Go CLI that POSTs to the server)
+ * Polls a Cloudflare Worker queue for content and inserts it into Thymer.
+ * Supports: markdown paste, lifelog entries, record creation.
+ *
+ * Configure THYMER_QUEUE_URL and THYMER_QUEUE_TOKEN in plugin settings.
  */
 
-const POLL_URL = 'http://localhost:3000/pending';
-const POLL_INTERVAL = 1000; // 1 second
+// Default to localhost for development, override in plugin config
+const DEFAULT_POLL_URL = 'http://localhost:3000/pending';
+const POLL_INTERVAL = 2000; // 2 seconds
+const MAX_FAILURES = 5; // Stop polling after this many consecutive failures
 
 class Plugin extends AppPlugin {
 
@@ -14,11 +18,17 @@ class Plugin extends AppPlugin {
         this.bridgeEnabled = false;
         this.connected = false;
         this.interval = null;
+        this.failureCount = 0;
+
+        // Get config from plugin settings (set in plugin.json or via API)
+        const config = this.getExistingCodeAndConfig?.()?.json || {};
+        this.queueUrl = config.queueUrl || DEFAULT_POLL_URL;
+        this.queueToken = config.queueToken || '';
 
         // Status bar - click to toggle bridge
         this.statusBarItem = this.ui.addStatusBarItem({
-            htmlLabel: '<span style="font-size: 14px;">🪄</span> skill',
-            tooltip: 'Skill Bridge - Click to enable CLI bridge',
+            htmlLabel: '<span style="font-size: 14px;">🪄</span> paste',
+            tooltip: 'Thymer Paste - Click to enable queue polling',
             onClick: () => this.toggleBridge()
         });
 
@@ -65,6 +75,7 @@ class Plugin extends AppPlugin {
             });
         } else {
             this.bridgeEnabled = true;
+            this.failureCount = 0;
             this.statusBarItem.setHtmlLabel('<span style="font-size: 14px;">🪄</span> <span style="opacity: 0.5;">connecting...</span>');
             this.statusBarItem.setTooltip('Skill Bridge - Connecting...');
             this.startPolling();
@@ -141,27 +152,80 @@ class Plugin extends AppPlugin {
         if (!this.bridgeEnabled) return;
 
         try {
-            const response = await fetch(POLL_URL);
+            const headers = {};
+            if (this.queueToken) {
+                headers['Authorization'] = `Bearer ${this.queueToken}`;
+            }
+
+            const response = await fetch(this.queueUrl, { headers });
 
             if (!response.ok) {
                 if (response.status === 204) {
+                    // No content - queue empty, but connected
+                    this.failureCount = 0;
                     this.setConnected(true);
                     return;
                 }
-                this.setConnected(false);
+                this.handleFailure();
                 return;
             }
 
+            this.failureCount = 0;
             this.setConnected(true);
             const data = await response.json();
 
-            if (data.markdown && data.markdown.trim()) {
-                await this.insertMarkdown(data.markdown);
+            // Handle different formats (legacy: markdown, new: content+action)
+            const content = data.content || data.markdown;
+            if (content && content.trim()) {
+                await this.handleQueueItem(data);
             }
 
         } catch (error) {
-            this.setConnected(false);
+            this.handleFailure();
         }
+    }
+
+    handleFailure() {
+        this.failureCount++;
+        this.setConnected(false);
+
+        if (this.failureCount >= MAX_FAILURES) {
+            this.stopPolling();
+            this.bridgeEnabled = false;
+            this.statusBarItem.setHtmlLabel('<span style="font-size: 14px;">🪄</span> <span style="color: #f87171;">offline</span>');
+            this.statusBarItem.setTooltip('Thymer Paste - Connection failed. Click to retry.');
+        }
+    }
+
+    async handleQueueItem(data) {
+        const content = data.content || data.markdown || '';
+        const action = data.action || 'append';
+
+        switch (action) {
+            case 'lifelog':
+                // Add timestamped entry to current record
+                const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                await this.insertMarkdown(`**${time}** ${content}`);
+                break;
+
+            case 'create':
+                // TODO: Create new record in collection
+                // For now, just insert as markdown
+                await this.insertMarkdown(content);
+                break;
+
+            case 'append':
+            default:
+                await this.insertMarkdown(content);
+                break;
+        }
+
+        this.ui.addToaster({
+            title: '🪄 Received',
+            message: `${action}: ${content.slice(0, 50)}${content.length > 50 ? '...' : ''}`,
+            dismissible: true,
+            autoDestroyTime: 2000,
+        });
     }
 
     setConnected(connected) {
