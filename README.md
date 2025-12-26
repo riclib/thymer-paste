@@ -49,6 +49,45 @@ Thymer doesn't have horizontal rules yet - it's been added to their roadmap.
 ### CLI Bridge (Optional)
 Click the status bar item to enable polling from a local server at `http://localhost:3000/pending`.
 
+## CLI Server Setup
+
+The `tm` CLI lets you pipe markdown directly to Thymer from the command line.
+
+### Quick Usage
+```bash
+# One-shot: serves content and exits when Thymer picks it up
+cat README.md | tm
+echo "# Hello World" | tm
+
+# Persistent server mode
+tm server
+```
+
+### Install with Taskfile
+
+```bash
+# Build and install to ~/.local/bin
+task install
+
+# Set up systemd user service (auto-starts on login)
+task service:install
+task service:start
+```
+
+### Service Management
+```bash
+task service:status   # Check if running
+task service:logs     # Tail the logs
+task service:restart  # Restart server
+task service:stop     # Stop server
+task service:uninstall # Remove service
+```
+
+### Paths
+- **Binary**: `~/.local/bin/tm`
+- **Logs**: `~/.local/share/thymer-paste/logs/server.log`
+- **Service**: `~/.config/systemd/user/thymer-paste.service`
+
 ## Internal Data Model
 
 Key discoveries about Thymer's internal data model:
