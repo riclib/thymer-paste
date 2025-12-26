@@ -7,22 +7,19 @@
  * Configure THYMER_QUEUE_URL and THYMER_QUEUE_TOKEN in plugin settings.
  */
 
-// Default to localhost for development, override in plugin config
-const DEFAULT_POLL_URL = 'http://localhost:3000/pending';
-const POLL_INTERVAL = 2000; // 2 seconds
-const MAX_FAILURES = 5; // Stop polling after this many consecutive failures
+// Default URL for development, override queueUrl in plugin config
+const DEFAULT_QUEUE_URL = 'https://thymer.lifelog.my';
 
 class Plugin extends AppPlugin {
 
     onLoad() {
         this.bridgeEnabled = false;
         this.connected = false;
-        this.interval = null;
-        this.failureCount = 0;
+        this.eventSource = null;
 
         // Get config from plugin settings (set in plugin.json or via API)
         const config = this.getExistingCodeAndConfig?.()?.json || {};
-        this.queueUrl = config.queueUrl || DEFAULT_POLL_URL;
+        this.queueUrl = config.queueUrl || DEFAULT_QUEUE_URL;
         this.queueToken = config.queueToken || '';
 
         // Status bar - click to toggle bridge
@@ -57,18 +54,18 @@ class Plugin extends AppPlugin {
         if (this.dumpCommand) {
             this.dumpCommand.remove();
         }
-        this.stopPolling();
+        this.stopStream();
     }
 
     toggleBridge() {
         if (this.bridgeEnabled) {
-            this.stopPolling();
+            this.stopStream();
             this.bridgeEnabled = false;
             this.connected = false;
             this.statusBarItem.setHtmlLabel('<span style="font-size: 14px;">🪄</span> skill');
-            this.statusBarItem.setTooltip('Skill Bridge - Click to enable CLI bridge');
+            this.statusBarItem.setTooltip('Thymer Paste - Click to enable CLI bridge');
             this.ui.addToaster({
-                title: '🪄 Skill Bridge',
+                title: '🪄 Thymer Paste',
                 message: 'Bridge disabled',
                 dismissible: true,
                 autoDestroyTime: 1500,
@@ -77,10 +74,10 @@ class Plugin extends AppPlugin {
             this.bridgeEnabled = true;
             this.failureCount = 0;
             this.statusBarItem.setHtmlLabel('<span style="font-size: 14px;">🪄</span> <span style="opacity: 0.5;">connecting...</span>');
-            this.statusBarItem.setTooltip('Skill Bridge - Connecting...');
-            this.startPolling();
+            this.statusBarItem.setTooltip('Thymer Paste - Connecting...');
+            this.startStream();
             this.ui.addToaster({
-                title: '🪄 Skill Bridge',
+                title: '🪄 Thymer Paste',
                 message: 'Bridge enabled - listening for CLI input',
                 dismissible: true,
                 autoDestroyTime: 1500,
@@ -88,15 +85,46 @@ class Plugin extends AppPlugin {
         }
     }
 
-    startPolling() {
-        this.poll();
-        this.interval = setInterval(() => this.poll(), POLL_INTERVAL);
+    startStream() {
+        // Build URL with token as query param (EventSource can't set headers)
+        const streamUrl = `${this.queueUrl}/stream` +
+            (this.queueToken ? `?token=${this.queueToken}` : '');
+
+        this.eventSource = new EventSource(streamUrl);
+
+        this.eventSource.onopen = () => {
+            this.setConnected(true);
+        };
+
+        this.eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.content || data.markdown) {
+                    this.handleQueueItem(data);
+                }
+            } catch (e) {
+                console.error('Failed to parse SSE message:', e);
+            }
+        };
+
+        this.eventSource.addEventListener('connected', () => {
+            this.setConnected(true);
+        });
+
+        this.eventSource.addEventListener('error', () => {
+            // EventSource auto-reconnects, just update status
+            this.setConnected(false);
+        });
+
+        this.eventSource.onerror = () => {
+            this.setConnected(false);
+        };
     }
 
-    stopPolling() {
-        if (this.interval) {
-            clearInterval(this.interval);
-            this.interval = null;
+    stopStream() {
+        if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
         }
     }
 
@@ -148,55 +176,6 @@ class Plugin extends AppPlugin {
         });
     }
 
-    async poll() {
-        if (!this.bridgeEnabled) return;
-
-        try {
-            const headers = {};
-            if (this.queueToken) {
-                headers['Authorization'] = `Bearer ${this.queueToken}`;
-            }
-
-            const response = await fetch(this.queueUrl, { headers });
-
-            if (!response.ok) {
-                if (response.status === 204) {
-                    // No content - queue empty, but connected
-                    this.failureCount = 0;
-                    this.setConnected(true);
-                    return;
-                }
-                this.handleFailure();
-                return;
-            }
-
-            this.failureCount = 0;
-            this.setConnected(true);
-            const data = await response.json();
-
-            // Handle different formats (legacy: markdown, new: content+action)
-            const content = data.content || data.markdown;
-            if (content && content.trim()) {
-                await this.handleQueueItem(data);
-            }
-
-        } catch (error) {
-            this.handleFailure();
-        }
-    }
-
-    handleFailure() {
-        this.failureCount++;
-        this.setConnected(false);
-
-        if (this.failureCount >= MAX_FAILURES) {
-            this.stopPolling();
-            this.bridgeEnabled = false;
-            this.statusBarItem.setHtmlLabel('<span style="font-size: 14px;">🪄</span> <span style="color: #f87171;">offline</span>');
-            this.statusBarItem.setTooltip('Thymer Paste - Connection failed. Click to retry.');
-        }
-    }
-
     async handleQueueItem(data) {
         const content = data.content || data.markdown || '';
         const action = data.action || 'append';
@@ -236,10 +215,10 @@ class Plugin extends AppPlugin {
 
             if (connected) {
                 this.statusBarItem.setHtmlLabel('<span style="font-size: 14px;">🪄</span> <span style="color: #4ade80;">●</span> skill');
-                this.statusBarItem.setTooltip('Skill Bridge - Connected (click to disable)');
+                this.statusBarItem.setTooltip('Thymer Paste - Connected (click to disable)');
             } else {
                 this.statusBarItem.setHtmlLabel('<span style="font-size: 14px;">🪄</span> <span style="color: #f87171;">●</span> skill');
-                this.statusBarItem.setTooltip('Skill Bridge - Server not found (click to disable)');
+                this.statusBarItem.setTooltip('Thymer Paste - Server not found (click to disable)');
             }
         }
     }
@@ -250,7 +229,7 @@ class Plugin extends AppPlugin {
 
         if (!record) {
             this.ui.addToaster({
-                title: '🪄 Skill Bridge',
+                title: '🪄 Thymer Paste',
                 message: 'No active record to insert into. Please open a note first.',
                 dismissible: true,
                 autoDestroyTime: 5000,

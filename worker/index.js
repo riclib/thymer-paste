@@ -2,10 +2,12 @@
  * Thymer Queue Worker
  *
  * Cloudflare Worker that acts as a message queue for Thymer content.
+ * Uses Server-Sent Events (SSE) for real-time delivery to plugins.
  *
  * Endpoints:
  *   POST /queue - Add content to queue
- *   GET /pending - Get and remove oldest item
+ *   GET /stream - SSE stream (delivers items in real-time)
+ *   GET /pending - Get and remove oldest item (legacy polling)
  *   GET /health - Health check (no auth)
  *
  * Environment variables (set in Cloudflare dashboard):
@@ -36,15 +38,21 @@ export default {
       });
     }
 
-    // Auth check for all other endpoints
+    // Auth via header or query param (for EventSource which can't set headers)
     const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
+    const queryToken = url.searchParams.get('token');
+    const token = authHeader?.replace('Bearer ', '') || queryToken;
 
     if (token !== env.THYMER_TOKEN) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    // SSE stream - real-time delivery
+    if (url.pathname === '/stream' && request.method === 'GET') {
+      return handleSSEStream(env, corsHeaders);
     }
 
     // POST /queue - Add to queue
@@ -139,3 +147,67 @@ export default {
     });
   },
 };
+
+/**
+ * SSE Stream handler
+ * Checks KV for new items every 2 seconds, delivers them as events
+ * Sends heartbeat comments to keep connection alive
+ */
+async function handleSSEStream(env, corsHeaders) {
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      // Send initial connection event
+      controller.enqueue(encoder.encode('event: connected\ndata: {}\n\n'));
+
+      let running = true;
+
+      const checkQueue = async () => {
+        if (!running) return;
+
+        try {
+          const list = await env.THYMER_KV.list({ prefix: 'queue:' });
+
+          if (list.keys.length > 0) {
+            // Get and delete oldest item
+            const oldestKey = list.keys[0].name;
+            const item = await env.THYMER_KV.get(oldestKey, 'json');
+            await env.THYMER_KV.delete(oldestKey);
+
+            if (item) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(item)}\n\n`));
+            }
+          } else {
+            // Send heartbeat comment to keep connection alive
+            controller.enqueue(encoder.encode(': heartbeat\n\n'));
+          }
+        } catch (e) {
+          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: e.message })}\n\n`));
+        }
+
+        // Schedule next check (Cloudflare Workers limit: ~30s max)
+        // We'll check every 2 seconds for up to 25 seconds, then close
+        setTimeout(checkQueue, 2000);
+      };
+
+      // Start checking
+      checkQueue();
+
+      // Close after 25 seconds (client will reconnect)
+      setTimeout(() => {
+        running = false;
+        controller.close();
+      }, 25000);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
+}
