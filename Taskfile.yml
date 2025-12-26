@@ -75,3 +75,86 @@ tasks:
     desc: Show recent git log
     cmds:
       - git log --oneline -10
+
+  # Server tasks
+  build:
+    desc: Build the tm server binary
+    dir: server
+    cmds:
+      - go build -o tm .
+      - echo "Built server/tm"
+
+  install:
+    desc: Install tm binary to ~/.local/bin
+    deps: [build]
+    cmds:
+      - mkdir -p ~/.local/bin
+      - cp server/tm ~/.local/bin/tm
+      - chmod +x ~/.local/bin/tm
+      - echo "Installed to ~/.local/bin/tm"
+      - echo "Make sure ~/.local/bin is in your PATH"
+
+  service:install:
+    desc: Install systemd user service for tm server
+    cmds:
+      - mkdir -p ~/.config/systemd/user
+      - mkdir -p ~/.local/share/thymer-paste/logs
+      - |
+        cat > ~/.config/systemd/user/thymer-paste.service << 'EOF'
+        [Unit]
+        Description=Thymer Paste Bridge Server
+        After=network.target
+
+        [Service]
+        Type=simple
+        ExecStart=%h/.local/bin/tm server
+        Restart=on-failure
+        RestartSec=5
+        StandardOutput=append:%h/.local/share/thymer-paste/logs/server.log
+        StandardError=append:%h/.local/share/thymer-paste/logs/server.log
+
+        [Install]
+        WantedBy=default.target
+        EOF
+      - systemctl --user daemon-reload
+      - systemctl --user enable thymer-paste.service
+      - echo "Service installed and enabled"
+      - echo "Run 'task service:start' to start it"
+
+  service:start:
+    desc: Start the tm server service
+    cmds:
+      - systemctl --user start thymer-paste.service
+      - echo "Service started"
+      - systemctl --user status thymer-paste.service --no-pager
+
+  service:stop:
+    desc: Stop the tm server service
+    cmds:
+      - systemctl --user stop thymer-paste.service
+      - echo "Service stopped"
+
+  service:restart:
+    desc: Restart the tm server service
+    cmds:
+      - systemctl --user restart thymer-paste.service
+      - echo "Service restarted"
+
+  service:status:
+    desc: Show tm server service status
+    cmds:
+      - systemctl --user status thymer-paste.service --no-pager
+
+  service:logs:
+    desc: Show tm server logs
+    cmds:
+      - tail -f ~/.local/share/thymer-paste/logs/server.log
+
+  service:uninstall:
+    desc: Stop and remove the systemd service
+    cmds:
+      - systemctl --user stop thymer-paste.service || true
+      - systemctl --user disable thymer-paste.service || true
+      - rm -f ~/.config/systemd/user/thymer-paste.service
+      - systemctl --user daemon-reload
+      - echo "Service removed"
